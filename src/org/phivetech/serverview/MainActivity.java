@@ -17,7 +17,7 @@ import com.google.vrtoolkit.cardboard.HeadTransform;
 import com.google.vrtoolkit.cardboard.Viewport;
 
 import android.content.Context;
-import android.opengl.GLES20;
+import static android.opengl.GLES20.*;
 import android.opengl.Matrix;
 import android.os.Bundle;
 import android.os.Vibrator;
@@ -46,7 +46,7 @@ public class MainActivity extends CardboardActivity implements
 	private FloatBuffer mCubeFoundColors;
 	private FloatBuffer mCubeNormals;
 	private int mGlProgram;
-	private int mPostionParam;
+	private int mPositionParam;
 	private int mNormalParam;
 	private int mColorParam;
 	private int mModelViewProjectionParam;
@@ -72,16 +72,16 @@ public class MainActivity extends CardboardActivity implements
 	
 	private int loadGlShader(int type, int resId){
 		String code = readRawTextFile(resId);
-		int shader = GLES20.glCreateShader(type);
-		GLES20.glShaderSource(shader, code);
-		GLES20.glCompileShader(shader);
+		int shader = glCreateShader(type);
+		glShaderSource(shader, code);
+		glCompileShader(shader);
 		
 		final int[] compileStatus = new int[1];
-		GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compileStatus, 0);
+		glGetShaderiv(shader, GL_COMPILE_STATUS, compileStatus, 0);
 		
 		if(compileStatus[0] == 0){
-			Log.e(TAG, "Error compiling shader: " + GLES20.glGetShaderInfoLog(shader));
-			GLES20.glDeleteShader(shader);
+			Log.e(TAG, "Error compiling shader: " + glGetShaderInfoLog(shader));
+			glDeleteShader(shader);
 			shader = 0;
 		}
 		if(shader == 0){
@@ -92,7 +92,7 @@ public class MainActivity extends CardboardActivity implements
 	
 	private static void checkGLError(String func){
 		int error;
-		while((error = GLES20.glGetError()) != GLES20.GL_NO_ERROR){
+		while((error = glGetError()) != GL_NO_ERROR){
 			Log.e(TAG, func + ": glError " + error);
 			throw new RuntimeException(func + ": glError " + error);
 		}
@@ -141,18 +141,18 @@ public class MainActivity extends CardboardActivity implements
 
 	@Override
 	public void onDrawEye(EyeTransform transform) {
-		GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
-		mPostionParam = GLES20.glGetAttribLocation(mGlProgram, "a_Position");
-		mNormalParam= GLES20.glGetAttribLocation(mGlProgram, "a_Normal");
-		mColorParam = GLES20.glGetAttribLocation(mGlProgram, "a_Color");
-		GLES20.glEnableVertexAttribArray(mPostionParam);
-		GLES20.glEnableVertexAttribArray(mNormalParam);
-		GLES20.glEnableVertexAttribArray(mColorParam);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		mPositionParam = glGetAttribLocation(mGlProgram, "a_Position");
+		mNormalParam= glGetAttribLocation(mGlProgram, "a_Normal");
+		mColorParam = glGetAttribLocation(mGlProgram, "a_Color");
+		glEnableVertexAttribArray(mPositionParam);
+		glEnableVertexAttribArray(mNormalParam);
+		glEnableVertexAttribArray(mColorParam);
 		checkGLError("mColorParam");
 		
 		Matrix.multiplyMM(mView, 0, transform.getEyeView(), 0, mCamera, 0);
 		Matrix.multiplyMV(mLightPosInEyeSpace, 0, mView, 0, mLightPosInWorldSpace, 0);
-		GLES20.glUniform3f(mLightPosParam, mLightPosInEyeSpace[0], mLightPosInEyeSpace[1],
+		glUniform3f(mLightPosParam, mLightPosInEyeSpace[0], mLightPosInEyeSpace[1],
 			mLightPosInEyeSpace[2]);
 		
 		Matrix.multiplyMM(mModelView, 0, mView, 0, mModelCube, 0);
@@ -172,12 +172,12 @@ public class MainActivity extends CardboardActivity implements
 
 	@Override
 	public void onNewFrame(HeadTransform transform) {
-		GLES20.glUseProgram(mGlProgram);
-		mModelViewProjectionParam = GLES20.glGetUniformLocation(mGlProgram, "u_MVP");
-		mLightPosParam = GLES20.glGetUniformLocation(mGlProgram, "u_LightPos");
-		mModelViewParam = GLES20.glGetUniformLocation(mGlProgram, "u_MVMatrix");
-		mModelParam = GLES20.glGetUniformLocation(mGlProgram, "u_Model");
-		mIsFloorParam = GLES20.glGetUniformLocation(mGlProgram, "u_IsFloor");
+		glUseProgram(mGlProgram);
+		mModelViewProjectionParam = glGetUniformLocation(mGlProgram, "u_MVP");
+		mLightPosParam = glGetUniformLocation(mGlProgram, "u_LightPos");
+		mModelViewParam = glGetUniformLocation(mGlProgram, "u_MVMatrix");
+		mModelParam = glGetUniformLocation(mGlProgram, "u_Model");
+		mIsFloorParam = glGetUniformLocation(mGlProgram, "u_IsFloor");
 		
 		Matrix.rotateM(mModelCube, 0, TIME_DELTA, 0.5f, 0.5f, 1.0f);
 		Matrix.setLookAtM(mCamera, 0, 0f, 0f, CAMERA_Z, 0f, 0f, 0f, 0f, 1f, 0f);
@@ -198,7 +198,7 @@ public class MainActivity extends CardboardActivity implements
 	@Override
 	public void onSurfaceCreated(EGLConfig config) {
 		Log.i(TAG, "surface created!");
-		GLES20.glClearColor(0.1f, 0.1f, 0.1f, 0.5f); // dark background
+		glClearColor(0.1f, 0.1f, 0.1f, 0.5f); // dark background
 		
 		// Make the cube
 		ByteBuffer bbVertices = ByteBuffer.allocateDirect(WorldLayout.CUBE_COORDS.length * 4);
@@ -244,14 +244,14 @@ public class MainActivity extends CardboardActivity implements
         mFloorColors.put(WorldLayout.FLOOR_COLORS);
         mFloorColors.position(0);
 		
-        int vertexShader = loadGlShader(GLES20.GL_VERTEX_SHADER, R.raw.light_vertex);
-        int gridShader = loadGlShader(GLES20.GL_FRAGMENT_SHADER, R.raw.grid_fragment);
+        int vertexShader = loadGlShader(GL_VERTEX_SHADER, R.raw.light_vertex);
+        int gridShader = loadGlShader(GL_FRAGMENT_SHADER, R.raw.grid_fragment);
         
-        mGlProgram = GLES20.glCreateProgram();
-        GLES20.glAttachShader(mGlProgram, vertexShader);
-        GLES20.glAttachShader(mGlProgram, gridShader);
-        GLES20.glLinkProgram(mGlProgram);
-        GLES20.glEnable(GLES20.GL_DEPTH_TEST);
+        mGlProgram = glCreateProgram();
+        glAttachShader(mGlProgram, vertexShader);
+        glAttachShader(mGlProgram, gridShader);
+        glLinkProgram(mGlProgram);
+        glEnable(GL_DEPTH_TEST);
         
         Matrix.setIdentityM(mModelCube, 0);
         Matrix.translateM(mModelCube, 0, 0, 0, -mObjectDistance);
@@ -280,39 +280,39 @@ public class MainActivity extends CardboardActivity implements
 	}
 	
 	public void drawCube(){
-		GLES20.glUniform1f(mIsFloorParam, 0f);
-		GLES20.glUniformMatrix4fv(mModelParam, 1, false, mModelCube, 0);
-		GLES20.glUniformMatrix4fv(mModelViewParam, 1, false, mModelView, 0);
-		GLES20.glVertexAttribPointer(mPostionParam, COORDS_PER_VERTEX, GLES20.GL_FLOAT,
+		glUniform1f(mIsFloorParam, 0f);
+		glUniformMatrix4fv(mModelParam, 1, false, mModelCube, 0);
+		glUniformMatrix4fv(mModelViewParam, 1, false, mModelView, 0);
+		glVertexAttribPointer(mPositionParam, COORDS_PER_VERTEX, GL_FLOAT,
 				false, 0, mCubeVertices);
-		GLES20.glUniformMatrix4fv(mModelViewProjectionParam, 1, false,
+		glUniformMatrix4fv(mModelViewProjectionParam, 1, false,
 				mModelViewProjection, 0);
-		GLES20.glVertexAttribPointer(mNormalParam, 3, GLES20.GL_FLOAT, false,
+		glVertexAttribPointer(mNormalParam, 3, GL_FLOAT, false,
 				0, mCubeNormals);
 		if(isLookingAtObject()){
-			GLES20.glVertexAttribPointer(mColorParam, 4, GLES20.GL_FLOAT, false, 0,
+			glVertexAttribPointer(mColorParam, 4, GL_FLOAT, false, 0,
 					mCubeFoundColors);
 		}
 		else{
-			GLES20.glVertexAttribPointer(mColorParam, 4, GLES20.GL_FLOAT, false, 0,
+			glVertexAttribPointer(mColorParam, 4, GL_FLOAT, false, 0,
 					mCubeColors);
 		}
-		GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 36);
+		glDrawArrays(GL_TRIANGLES, 0, 36);
 		checkGLError("Drawing cube");
 	}
 	
 	public void drawFloor(float[] perspective){
-		GLES20.glUniform1f(mIsFloorParam, 1f);
+		glUniform1f(mIsFloorParam, 1f);
 		
-		GLES20.glUniformMatrix4fv(mModelParam, 1, false, mModelFloor, 0);
-		GLES20.glUniformMatrix4fv(mModelViewParam, 1, false, mModelView, 0);
-		GLES20.glUniformMatrix4fv(mModelViewProjectionParam, 1, false,
+		glUniformMatrix4fv(mModelParam, 1, false, mModelFloor, 0);
+		glUniformMatrix4fv(mModelViewParam, 1, false, mModelView, 0);
+		glUniformMatrix4fv(mModelViewProjectionParam, 1, false,
 				mModelViewProjection, 0);
-		GLES20.glVertexAttribPointer(mPostionParam, COORDS_PER_VERTEX, GLES20.GL_FLOAT,
+		glVertexAttribPointer(mPositionParam, COORDS_PER_VERTEX, GL_FLOAT,
 				false, 0, mFloorVertices);
-		GLES20.glVertexAttribPointer(mNormalParam, 3, GLES20.GL_FLOAT, false, 0, mFloorNormals);
-		GLES20.glVertexAttribPointer(mColorParam, 4, GLES20.GL_FLOAT, false, 0, mFloorColors);
-		GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 6);
+		glVertexAttribPointer(mNormalParam, 3, GL_FLOAT, false, 0, mFloorNormals);
+		glVertexAttribPointer(mColorParam, 4, GL_FLOAT, false, 0, mFloorColors);
+		glDrawArrays(GL_TRIANGLES, 0, 6);
 		
 		checkGLError("drawFloor");		
 	}

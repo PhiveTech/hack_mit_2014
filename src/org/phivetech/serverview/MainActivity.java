@@ -7,6 +7,8 @@ import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.microedition.khronos.egl.EGLConfig;
 
@@ -17,13 +19,15 @@ import com.google.vrtoolkit.cardboard.HeadTransform;
 import com.google.vrtoolkit.cardboard.Viewport;
 
 import android.content.Context;
-import static android.opengl.GLES20.*;
 import android.opengl.Matrix;
 import android.os.Bundle;
 import android.os.Vibrator;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
+
+import static android.opengl.GLES20.*;
 
 public class MainActivity extends CardboardActivity implements
 			CardboardView.StereoRenderer {
@@ -38,17 +42,25 @@ public class MainActivity extends CardboardActivity implements
 	
 	private final float[] mLightPosInWorldSpace = new float[]{0.0f, 2.0f, 0.0f, 1.0f};
 	private final float[] mLightPosInEyeSpace = new float[4];
-	private FloatBuffer mFloorVertices;
-	private FloatBuffer mFloorColors;
-	private FloatBuffer mFloorNormals;
-	private FloatBuffer mCubeVertices;
-	private FloatBuffer mCubeColors;
-	private FloatBuffer mCubeFoundColors;
-	private FloatBuffer mCubeNormals;
+	// The vertices of the floor
+	private FloatBuffer floorVertices;
+	// The colors of the floor
+	private FloatBuffer floorColors;
+	// The normal vectors of the floor
+	private FloatBuffer floorNormals;
+	// The vertices of the cubes
+//	private FloatBuffer[] cubeVertices;
+//	// The colors of un-found cubes
+//	private FloatBuffer[] cubeColors;
+//	// The colors of found cubes
+//	private FloatBuffer[] cubeFoundColors;
+//	// The normal vectors of the cubes
+//	private FloatBuffer[] cubeNormals;
+	private List<Cube> cubes;
 	private int mGlProgram;
-	private int mPositionParam;
-	private int mNormalParam;
-	private int mColorParam;
+	private int positionLoc;
+	private int normalLoc;
+	private int colorLoc;
 	private int mModelViewProjectionParam;
 	private int mLightPosParam;
 	private int mModelViewParam;
@@ -103,6 +115,8 @@ public class MainActivity extends CardboardActivity implements
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
 		
+		cubes = new ArrayList<Cube>();
+		
 		CardboardView cardboardView = (CardboardView) findViewById(R.id.cardboard_view);
 		cardboardView.setRenderer(this);
 		setCardboardView(cardboardView);
@@ -114,6 +128,11 @@ public class MainActivity extends CardboardActivity implements
 	    mModelView = new float[16];
 	    mModelFloor = new float[16];
 	    mHeadView = new float[16];
+	    
+	    for(int i = 0; i < 4; i++){
+	    	cubes.add(new Cube());
+	    }
+	    
 	    vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
 	    
 	    mHUD = (ServerviewOverlayView) findViewById(R.id.overlay);
@@ -142,13 +161,13 @@ public class MainActivity extends CardboardActivity implements
 	@Override
 	public void onDrawEye(EyeTransform transform) {
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		mPositionParam = glGetAttribLocation(mGlProgram, "a_Position");
-		mNormalParam= glGetAttribLocation(mGlProgram, "a_Normal");
-		mColorParam = glGetAttribLocation(mGlProgram, "a_Color");
-		glEnableVertexAttribArray(mPositionParam);
-		glEnableVertexAttribArray(mNormalParam);
-		glEnableVertexAttribArray(mColorParam);
-		checkGLError("mColorParam");
+		positionLoc = glGetAttribLocation(mGlProgram, "a_Position");
+		normalLoc = glGetAttribLocation(mGlProgram, "a_Normal");
+		colorLoc = glGetAttribLocation(mGlProgram, "a_Color");
+		glEnableVertexAttribArray(positionLoc);
+		glEnableVertexAttribArray(normalLoc);
+		glEnableVertexAttribArray(colorLoc);
+		checkGLError("onDrawEye");
 		
 		Matrix.multiplyMM(mView, 0, transform.getEyeView(), 0, mCamera, 0);
 		Matrix.multiplyMV(mLightPosInEyeSpace, 0, mView, 0, mLightPosInWorldSpace, 0);
@@ -158,7 +177,9 @@ public class MainActivity extends CardboardActivity implements
 		Matrix.multiplyMM(mModelView, 0, mView, 0, mModelCube, 0);
 		Matrix.multiplyMM(mModelViewProjection, 0, transform.getPerspective(), 
 				0, mModelView, 0);
-		drawCube();
+		for(int i = 0; i < cubeColors.length; i++){
+			drawCube(i);
+		}
 		
 		Matrix.multiplyMM(mModelView, 0, mView, 0, mModelFloor, 0);
 		Matrix.multiplyMM(mModelViewProjection, 0, transform.getPerspective(),
@@ -200,49 +221,52 @@ public class MainActivity extends CardboardActivity implements
 		Log.i(TAG, "surface created!");
 		glClearColor(0.1f, 0.1f, 0.1f, 0.5f); // dark background
 		
-		// Make the cube
-		ByteBuffer bbVertices = ByteBuffer.allocateDirect(WorldLayout.CUBE_COORDS.length * 4);
-		bbVertices.order(ByteOrder.nativeOrder());
-		mCubeVertices = bbVertices.asFloatBuffer();
-		mCubeVertices.put(WorldLayout.CUBE_COORDS);
-		mCubeVertices.position(0);
-		
-		ByteBuffer bbColors = ByteBuffer.allocateDirect(WorldLayout.CUBE_COLORS.length * 4);
-		bbColors.order(ByteOrder.nativeOrder());
-		mCubeColors = bbColors.asFloatBuffer();
-		mCubeColors.put(WorldLayout.CUBE_COLORS);
-		mCubeColors.position(0);
-		
-		ByteBuffer bbFoundColors = ByteBuffer.allocateDirect(WorldLayout.CUBE_FOUND_COLORS.length * 4);
-		bbFoundColors.order(ByteOrder.nativeOrder());
-		mCubeFoundColors = bbFoundColors.asFloatBuffer();
-		mCubeFoundColors.put(WorldLayout.CUBE_FOUND_COLORS);
-		mCubeFoundColors.position(0);
-		
-		ByteBuffer bbNormals = ByteBuffer.allocateDirect(WorldLayout.CUBE_NORMALS.length * 4);
-		bbNormals.order(ByteOrder.nativeOrder());
-		mCubeNormals = bbNormals.asFloatBuffer();
-		mCubeNormals.put(WorldLayout.CUBE_NORMALS);
-		mCubeNormals.position(0);
+		// Make the cubes
+		for(int i = 0; i < WorldLayout.CUBE_COORDS.length; i++) {
+			ByteBuffer bbVertices = ByteBuffer.allocateDirect(WorldLayout.CUBE_COORDS[i].length * 4);
+			bbVertices.order(ByteOrder.nativeOrder());
+			cubeVertices[i] = bbVertices.asFloatBuffer();
+			cubeVertices[i].put(WorldLayout.CUBE_COORDS[i]);
+			cubeVertices[i].position(0);
+			
+			ByteBuffer bbColors = ByteBuffer.allocateDirect(WorldLayout.CUBE_COLORS[i].length * 4);
+			bbColors.order(ByteOrder.nativeOrder());
+			cubeColors[i] = bbColors.asFloatBuffer();
+			cubeColors[i].put(WorldLayout.CUBE_COLORS[i]);
+			cubeColors[i].position(0);
+			
+			ByteBuffer bbFoundColors = ByteBuffer.allocateDirect(WorldLayout.CUBE_FOUND_COLORS[i].length * 4);
+			bbFoundColors.order(ByteOrder.nativeOrder());
+			cubeFoundColors[i] = bbFoundColors.asFloatBuffer();
+			cubeFoundColors[i].put(WorldLayout.CUBE_FOUND_COLORS[i]);
+			cubeFoundColors[i].position(0);
+			
+			// All cubes have the same set of normals
+			ByteBuffer bbNormals = ByteBuffer.allocateDirect(WorldLayout.CUBE_NORMALS.length * 4);
+			bbNormals.order(ByteOrder.nativeOrder());
+			cubeNormals[i] = bbNormals.asFloatBuffer();
+			cubeNormals[i].put(WorldLayout.CUBE_NORMALS);
+			cubeNormals[i].position(0);
+		}
 		
 		// Floor
 		ByteBuffer bbFloorVertices = ByteBuffer.allocateDirect(WorldLayout.FLOOR_COORDS.length * 4);
         bbFloorVertices.order(ByteOrder.nativeOrder());
-        mFloorVertices = bbFloorVertices.asFloatBuffer();
-        mFloorVertices.put(WorldLayout.FLOOR_COORDS);
-        mFloorVertices.position(0);
+        floorVertices = bbFloorVertices.asFloatBuffer();
+        floorVertices.put(WorldLayout.FLOOR_COORDS);
+        floorVertices.position(0);
 
         ByteBuffer bbFloorNormals = ByteBuffer.allocateDirect(WorldLayout.FLOOR_NORMALS.length * 4);
         bbFloorNormals.order(ByteOrder.nativeOrder());
-        mFloorNormals = bbFloorNormals.asFloatBuffer();
-        mFloorNormals.put(WorldLayout.FLOOR_NORMALS);
-        mFloorNormals.position(0);
+        floorNormals = bbFloorNormals.asFloatBuffer();
+        floorNormals.put(WorldLayout.FLOOR_NORMALS);
+        floorNormals.position(0);
 
         ByteBuffer bbFloorColors = ByteBuffer.allocateDirect(WorldLayout.FLOOR_COLORS.length * 4);
         bbFloorColors.order(ByteOrder.nativeOrder());
-        mFloorColors = bbFloorColors.asFloatBuffer();
-        mFloorColors.put(WorldLayout.FLOOR_COLORS);
-        mFloorColors.position(0);
+        floorColors = bbFloorColors.asFloatBuffer();
+        floorColors.put(WorldLayout.FLOOR_COLORS);
+        floorColors.position(0);
 		
         int vertexShader = loadGlShader(GL_VERTEX_SHADER, R.raw.light_vertex);
         int gridShader = loadGlShader(GL_FRAGMENT_SHADER, R.raw.grid_fragment);
@@ -279,23 +303,23 @@ public class MainActivity extends CardboardActivity implements
 		return "";
 	}
 	
-	public void drawCube(){
+	public void drawCube(int index){
 		glUniform1f(mIsFloorParam, 0f);
 		glUniformMatrix4fv(mModelParam, 1, false, mModelCube, 0);
 		glUniformMatrix4fv(mModelViewParam, 1, false, mModelView, 0);
-		glVertexAttribPointer(mPositionParam, COORDS_PER_VERTEX, GL_FLOAT,
-				false, 0, mCubeVertices);
+		glVertexAttribPointer(positionLoc, COORDS_PER_VERTEX, GL_FLOAT,
+				false, 0, cubeVertices[index]);
 		glUniformMatrix4fv(mModelViewProjectionParam, 1, false,
 				mModelViewProjection, 0);
-		glVertexAttribPointer(mNormalParam, 3, GL_FLOAT, false,
-				0, mCubeNormals);
+		glVertexAttribPointer(normalLoc, 3, GL_FLOAT, false,
+				0, cubeNormals[index]);
 		if(isLookingAtObject()){
-			glVertexAttribPointer(mColorParam, 4, GL_FLOAT, false, 0,
-					mCubeFoundColors);
+			glVertexAttribPointer(colorLoc, 4, GL_FLOAT, false, 0,
+					cubeFoundColors[index]);
 		}
 		else{
-			glVertexAttribPointer(mColorParam, 4, GL_FLOAT, false, 0,
-					mCubeColors);
+			glVertexAttribPointer(colorLoc, 4, GL_FLOAT, false, 0,
+					cubeColors[index]);
 		}
 		glDrawArrays(GL_TRIANGLES, 0, 36);
 		checkGLError("Drawing cube");
@@ -308,10 +332,10 @@ public class MainActivity extends CardboardActivity implements
 		glUniformMatrix4fv(mModelViewParam, 1, false, mModelView, 0);
 		glUniformMatrix4fv(mModelViewProjectionParam, 1, false,
 				mModelViewProjection, 0);
-		glVertexAttribPointer(mPositionParam, COORDS_PER_VERTEX, GL_FLOAT,
-				false, 0, mFloorVertices);
-		glVertexAttribPointer(mNormalParam, 3, GL_FLOAT, false, 0, mFloorNormals);
-		glVertexAttribPointer(mColorParam, 4, GL_FLOAT, false, 0, mFloorColors);
+		glVertexAttribPointer(positionLoc, COORDS_PER_VERTEX, GL_FLOAT,
+				false, 0, floorVertices);
+		glVertexAttribPointer(normalLoc, 3, GL_FLOAT, false, 0, floorNormals);
+		glVertexAttribPointer(colorLoc, 4, GL_FLOAT, false, 0, floorColors);
 		glDrawArrays(GL_TRIANGLES, 0, 6);
 		
 		checkGLError("drawFloor");		
@@ -360,4 +384,20 @@ public class MainActivity extends CardboardActivity implements
 		float yaw  = (float) Math.atan2(objPos[0], -objPos[2]);
 		return Math.abs(pitch) < PITCH_LIMIT && Math.abs(yaw) < YAW_LIMIT;
 	}
+	
+	@Override
+	public boolean dispatchKeyEvent(KeyEvent event) {
+		boolean result;
+		switch(event.getKeyCode()){
+		case KeyEvent.KEYCODE_VOLUME_DOWN:
+		case KeyEvent.KEYCODE_VOLUME_UP:
+			result = true;
+			break;
+		default:
+			result = super.dispatchKeyEvent(event);
+			break;
+		}
+		return result;
+	}
+	
 }

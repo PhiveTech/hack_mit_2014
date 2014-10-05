@@ -4,6 +4,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 
+import com.google.vrtoolkit.cardboard.EyeTransform;
+
 import android.graphics.Color;
 import android.opengl.Matrix;
 
@@ -15,7 +17,7 @@ import static android.opengl.GLES20.*;
  */
 public class Floor extends DrawableObject {
 	
-	private static float[] DEFAULT_VERTICES = {
+	private static final float[] DEFAULT_VERTICES = {
         200f, 0, -200f,
         -200f, 0, -200f,
         -200f, 0, 200f,
@@ -37,8 +39,8 @@ public class Floor extends DrawableObject {
 	private FloatBuffer normals;
 	
 	private float[] model;
-	private float[] view;
-	private float[] viewProjection;
+	private float[] modelView;
+	private float[] modelViewProjection;
 	
 	/**
 	 * Creates the floor.
@@ -68,15 +70,15 @@ public class Floor extends DrawableObject {
 		this.model = new float[16];
 		Matrix.setIdentityM(this.model, 0);
 		Matrix.translateM(this.model, 0, 0, -floorDepth, 0);
-		this.view = new float[16];
-		this.viewProjection = new float[16];
+		this.modelView = new float[16];
+		this.modelViewProjection = new float[16];
 	}
 	
-	public void draw(float[] headView, float[] perspective, int programPointer,
+	public void draw(Camera camera, EyeTransform trans, int programPointer,
 			int modelPointer, int viewPointer, int viewProjectionPointer) {
 		// Do matrix multiplications
-		updateView(headView);
-		Matrix.multiplyMM(viewProjection, 0, perspective, 0, headView, 0);
+		updateView(camera);
+		Matrix.multiplyMM(modelViewProjection, 0, trans.getPerspective(), 0, camera.getView(), 0);
 		// Set up OpenGL pointers
 		int isFloorPointer = glGetAttribLocation(programPointer, "u_IsFloor");
 		// TODO we just got these in MainActivity.onDrawEye
@@ -88,9 +90,9 @@ public class Floor extends DrawableObject {
 		// Set the model in the shader
 		glUniformMatrix4fv(modelPointer, 1, false, model, 0);
 		// Set the view in the shader
-		glUniformMatrix4fv(viewPointer, 1, false, headView, 0);
+		glUniformMatrix4fv(viewPointer, 1, false, modelView, 0);
 		// Set the view projection in the shader
-		glUniformMatrix4fv(viewProjectionPointer, 1, false, viewProjection, 0);
+		glUniformMatrix4fv(viewProjectionPointer, 1, false, modelViewProjection, 0);
 		// Set the position of the cube
 		glVertexAttribPointer(positionPointer, 3, GL_FLOAT, false, 0, vertices);
 		// Set the normals in the shader
@@ -103,8 +105,8 @@ public class Floor extends DrawableObject {
 		MainActivity.checkGLError("drawFloor");
 	}
 
-	public void updateView(float[] view){
-		Matrix.multiplyMM(this.view, 0, view, 0, model, 0);
+	public void updateView(Camera c){
+		Matrix.multiplyMM(modelView, 0, c.getView(), 0, model, 0);
 	}
 
 }

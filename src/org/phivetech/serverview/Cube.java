@@ -4,6 +4,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 
+import com.google.vrtoolkit.cardboard.EyeTransform;
+
 import android.graphics.Color;
 import android.opengl.Matrix;
 
@@ -15,7 +17,7 @@ import static android.opengl.GLES20.*;
  */
 public class Cube extends DrawableObject {
 	
-	private static float[] DEFAULT_VERTICES = {
+	private static final float[] DEFAULT_VERTICES = {
 	    // Front face
 	    -1.0f, 1.0f, 1.0f,
 	    -1.0f, -1.0f, 1.0f,
@@ -123,10 +125,10 @@ public class Cube extends DrawableObject {
 	// The actual cube matrix
 	private float[] model;
 	// The view on the cube
-	private float[] view;
+	private float[] modelView;
 	// The projected view on the cube
-	private float[] viewProjection;
-	
+	private float[] modelViewProjection;
+
 	private float distance;
 	
 	/**
@@ -179,48 +181,47 @@ public class Cube extends DrawableObject {
 		Matrix.setIdentityM(this.model, 0);
 		Matrix.translateM(this.model, 0, 0, 0, -distance);
 		
-		this.view = new float[16];
-		this.viewProjection = new float[16];
+		this.modelView = new float[16];
+		this.modelViewProjection = new float[16];
 	}
 	
-	// TODO take a camera object
-	private void updateView(float[] headView){
-		Matrix.multiplyMM(this.view, 0, headView, 0, model, 0);
+	private void updateView(Camera c){
+		Matrix.multiplyMM(this.modelView, 0, c.getView(), 0, model, 0);
 	}
 	
 	/**
 	 * Detects if this object is in the center of the field of view.
-	 * @param headView The current head view TODO take a camera object
+	 * @param c The current camera
 	 * @param pitchLimit How lenient to be in terms of pitch
 	 * @param yawLimit How lenient to be in terms of yaw
 	 * @return Is the object within pitchLimit and yawLimit of the center of the
 	 * 		field of view?
 	 */
-	public boolean isLookingAt(float[] headView, float pitchLimit, float yawLimit){
+	public boolean isLookingAt(Camera c, float pitchLimit, float yawLimit){
 		float[] initVec = {0, 0, 0, 1f};
 		float[] objPos = new float[4];
-		updateView(headView);
+		updateView(c);
 		// Calculate the object position in the view
-		Matrix.multiplyMV(objPos, 0, view, 0, initVec, 0);
+		Matrix.multiplyMV(objPos, 0, modelView, 0, initVec, 0);
 		float pitch = (float) Math.atan2(objPos[1], -objPos[2]);
 		float yaw  = (float) Math.atan2(objPos[0], -objPos[2]);
 		return Math.abs(pitch) < pitchLimit && Math.abs(yaw) < yawLimit;
 	}
 	
 	/**
-	 * 
-	 * @param headView
-	 * @param perspective
-	 * @param programPointer
-	 * @param modelPointer
-	 * @param viewPointer
-	 * @param viewProjectionPointer
+	 * Draws the cube for one eye.
+	 * @param camera The camera object, used to determine what color to draw the cube.
+	 * @param trans The transform for the eye.
+	 * @param programPointer The pointer to the program.
+	 * @param modelPointer The pointer to the shader's model variable.
+	 * @param viewPointer The pointer to the shader's view variable.
+	 * @param viewProjectionPointer The pointer to the shader's viewProjection variable.
 	 */
-	public void draw(float[] headView, float[] perspective, int programPointer,
+	public void draw(Camera camera, EyeTransform trans, int programPointer,
 			int modelPointer, int viewPointer, int viewProjectionPointer){
 		// Do matrix multiplications
-		updateView(headView);
-		Matrix.multiplyMM(viewProjection, 0, perspective, 0, headView, 0);
+		updateView(camera);
+		Matrix.multiplyMM(modelViewProjection, 0, trans.getPerspective(), 0, modelView, 0);
 		// Set OpenGL variables
 		int isFloorPointer = glGetAttribLocation(programPointer, "u_IsFloor");
 		// TODO we just got these in MainActivity.onDrawEye
@@ -232,15 +233,16 @@ public class Cube extends DrawableObject {
 		// Set the model in the shader
 		glUniformMatrix4fv(modelPointer, 1, false, model, 0);
 		// Set the view in the shader
-		glUniformMatrix4fv(viewPointer, 1, false, view, 0);
+		glUniformMatrix4fv(viewPointer, 1, false, modelView, 0);
 		// Set the position of the cube
 		glVertexAttribPointer(positionPointer, 3, GL_FLOAT, false, 0, vertices);
 		// Set the view projection matrix in the shader
-		glUniformMatrix4fv(viewProjectionPointer, 1, false, viewProjection, 0);
+		glUniformMatrix4fv(viewProjectionPointer, 1, false, modelViewProjection, 0);
 		// Set the normals of the cube in the shader
 		glVertexAttribPointer(normalPointer, 3, GL_FLOAT, false, 0, normals);
 		// Set the color in the shader
-		if(isLookingAt(headView, MainActivity.PITCH_LIMIT, MainActivity.YAW_LIMIT)){
+		if(isLookingAt(camera, MainActivity.PITCH_LIMIT,
+				MainActivity.YAW_LIMIT)){
 			glVertexAttribPointer(colorPointer, 4, GL_FLOAT, false, 0, ordinaryColors);
 		}
 		else {

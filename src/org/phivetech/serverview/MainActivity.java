@@ -17,7 +17,6 @@ import com.google.vrtoolkit.cardboard.Viewport;
 
 import android.content.Context;
 import android.graphics.Color;
-import android.opengl.Matrix;
 import android.os.Bundle;
 import android.os.Vibrator;
 import android.util.Log;
@@ -43,17 +42,15 @@ public class MainActivity extends CardboardActivity implements
 	public static final float YAW_LIMIT = 0.12f;
 	public static final float PITCH_LIMIT = 0.12f;
 	public static final int COORDS_PER_VERTEX = 3;
-	
-	// TODO light object
-	private final float[] lightInWorld = new float[]{0.0f, 2.0f, 0.0f, 1.0f};
-	private final float[] lightInEyes = new float[4];
+
+	private PointLight light;
 	
 	private List<Cube> cubes;
 	private Floor floor;
 	
 	// The OpenGL program
 	private int programPointer;
-	// Pointers!
+	// Pointers to shader variables
 	private int positionPointer;
 	private int normalPointer;
 	private int colorPointer;
@@ -61,10 +58,8 @@ public class MainActivity extends CardboardActivity implements
 	private int viewPointer;
 	private int modelPointer;
 	private int viewProjectionPointer;
-	// TODO camera object
-	private float[] mCamera;
-	private float[] mView;
-	private float[] headView;
+	
+	private Camera camera;
 	
 	private int score = 0;
 	private float objectDistance = 12f;
@@ -126,21 +121,19 @@ public class MainActivity extends CardboardActivity implements
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
+		// No title bar
 		getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, 
 				WindowManager.LayoutParams.FLAG_FULLSCREEN);
 		setContentView(R.layout.activity_main);
-		
-		cubes = new ArrayList<Cube>();
 		
 		// Load the cardboard view
 		CardboardView cardboardView = (CardboardView) findViewById(R.id.cardboard_view);
 		cardboardView.setRenderer(this);
 		setCardboardView(cardboardView);
 		
-		// Set up the camera TODO move to Camera class
-		mCamera = new float[16];
-	    mView = new float[16];
-	    headView = new float[16];
+		camera = new Camera();
+		light = new PointLight(new float[]{0.0f, 2.0f, 0.0f, 1.0f});
+		cubes = new ArrayList<Cube>();
 
 	    // Load the default vibrator (hue hue hue)
 	    vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
@@ -148,7 +141,7 @@ public class MainActivity extends CardboardActivity implements
 	    // Find the Heads-Up Display
 	    hud = (ServerviewOverlayView) findViewById(R.id.overlay);
 	    
-	    // Display the start message TODO more arguments (time, color, etc)
+	    // Display the start message
 	    hud.show3dToast("Do a thing when you see the thing");
 	}
 
@@ -233,11 +226,9 @@ public class MainActivity extends CardboardActivity implements
 			cube.rotate(TIME_DELTA, 0.5f, 0.5f, 1.0f);
 		}
 		
-		// TODO camera object
-		Matrix.setLookAtM(mCamera, 0, 0f, 0f, CAMERA_Z, 0f, 0f, 0f, 0f, 1f, 0f);
-		
-		// Save part of the head transformation
-		transform.getHeadView(headView, 0);
+		// Update the camera
+		camera.pointAt(0f, 0f, CAMERA_Z, 0f, 0f, 0f, 0f, 1f, 0f);
+		camera.setHeadCorrection(transform);
 		
 		checkGLError("onNewFrame");
 	}
@@ -257,23 +248,18 @@ public class MainActivity extends CardboardActivity implements
 		glEnableVertexAttribArray(colorPointer);
 		checkGLError("onDrawEyePointer");
 		
-		// Calculate the view
-		Matrix.multiplyMM(mView, 0, transform.getEyeView(), 0, mCamera, 0);
-		
 		// Place the light
-		Matrix.multiplyMV(lightInEyes, 0, mView, 0, lightInWorld, 0);
-		glUniform3f(lightPosPointer, lightInEyes[0], lightInEyes[1],
-					lightInEyes[2]);
+		light.place(lightPosPointer, camera);
 		
 		// Draw each of the cubes
 		for(Cube cube : cubes) {
-			cube.draw(mView, transform.getPerspective(), programPointer, 
-					modelPointer, viewPointer, viewProjectionPointer);
+			cube.draw(camera, transform, programPointer, modelPointer, viewPointer,
+					viewProjectionPointer);
 		}
 		
 		// Draw the floor
-		floor.draw(mView, transform.getPerspective(), programPointer,
-					modelPointer, viewPointer, viewProjectionPointer);
+		floor.draw(camera, transform, programPointer, modelPointer, viewPointer,
+				viewProjectionPointer);
 		
 	}
 
@@ -290,7 +276,7 @@ public class MainActivity extends CardboardActivity implements
 		Log.i(TAG, "cardboard trigger!");
 
 		for(Cube cube : cubes){
-			if(cube.isLookingAt(headView, PITCH_LIMIT, YAW_LIMIT)){
+			if(cube.isLookingAt(camera, PITCH_LIMIT, YAW_LIMIT)){
 				hud.show3dToast("Yay! Find another one!\nScore: " + score);
 	            score++;
 				cube.randomizeLocation();

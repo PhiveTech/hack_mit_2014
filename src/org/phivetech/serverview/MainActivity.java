@@ -4,9 +4,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,6 +16,7 @@ import com.google.vrtoolkit.cardboard.HeadTransform;
 import com.google.vrtoolkit.cardboard.Viewport;
 
 import android.content.Context;
+import android.graphics.Color;
 import android.opengl.Matrix;
 import android.os.Bundle;
 import android.os.Vibrator;
@@ -26,62 +24,55 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.WindowManager;
 
 import static android.opengl.GLES20.*;
 
+/**
+ * The main activity of the game.
+ * @author zrneely, gebhard
+ *
+ */
 public class MainActivity extends CardboardActivity implements
 			CardboardView.StereoRenderer {
 	
 	private static final String TAG = MainActivity.class.getSimpleName();
 	
-	private static final float CAMERA_Z = 0.01f;
-	private static final float TIME_DELTA = 0.13f;
-	private static final float YAW_LIMIT = 0.12f;
-	private static final float PITCH_LIMIT = 0.12f;
-	private static final int COORDS_PER_VERTEX = 3;
+	public static final float CAMERA_Z = 0.01f;
+	public static final float TIME_DELTA = 0.13f;
+	public static final float YAW_LIMIT = 0.12f;
+	public static final float PITCH_LIMIT = 0.12f;
+	public static final int COORDS_PER_VERTEX = 3;
 	
-	private final float[] mLightPosInWorldSpace = new float[]{0.0f, 2.0f, 0.0f, 1.0f};
-	private final float[] mLightPosInEyeSpace = new float[4];
-	// The vertices of the floor
-	private FloatBuffer floorVertices;
-	// The colors of the floor
-	private FloatBuffer floorColors;
-	// The normal vectors of the floor
-	private FloatBuffer floorNormals;
-	// The vertices of the cubes
-//	private FloatBuffer[] cubeVertices;
-//	// The colors of un-found cubes
-//	private FloatBuffer[] cubeColors;
-//	// The colors of found cubes
-//	private FloatBuffer[] cubeFoundColors;
-//	// The normal vectors of the cubes
-//	private FloatBuffer[] cubeNormals;
+	// TODO light object
+	private final float[] lightInWorld = new float[]{0.0f, 2.0f, 0.0f, 1.0f};
+	private final float[] lightInEyes = new float[4];
+	
 	private List<Cube> cubes;
-	private int mGlProgram;
-	private int positionLoc;
-	private int normalLoc;
-	private int colorLoc;
-	private int mModelViewProjectionParam;
-	private int mLightPosParam;
-	private int mModelViewParam;
-	private int mModelParam;
-	private int mIsFloorParam;
-	private float[] mModelCube;
+	private Floor floor;
+	
+	// The OpenGL program
+	private int programPointer;
+	// Pointers!
+	private int positionPointer;
+	private int normalPointer;
+	private int colorPointer;
+	private int lightPosPointer;
+	private int viewPointer;
+	private int modelPointer;
+	private int viewProjectionPointer;
+	// TODO camera object
 	private float[] mCamera;
 	private float[] mView;
-	private float[] mHeadView;
-	private float[] mModelViewProjection;
-	private float[] mModelView;
-	private float[] mModelFloor;
-    private Boolean mGameStarted = false;
+	private float[] headView;
 	
-	private int mScore = 0;
-	private float mObjectDistance = 12f;
-	private float mFloorDepth = 20f;
+	private int score = 0;
+	private float objectDistance = 12f;
+	private float floorDepth = 20f;
 	
 	private Vibrator vibrator;
 	
-	private ServerviewOverlayView mHUD;
+	private ServerviewOverlayView hud;
 	
 	private int loadGlShader(int type, int resId){
 		String code = readRawTextFile(resId);
@@ -103,7 +94,28 @@ public class MainActivity extends CardboardActivity implements
 		return shader;
 	}
 	
-	private static void checkGLError(String func){
+	private String readRawTextFile(int resId){
+		InputStream is = getResources().openRawResource(resId);
+		try {
+			BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+			StringBuilder sb = new StringBuilder();
+			String line;
+			while((line = reader.readLine()) != null){
+				sb.append(line).append("\n");
+			}
+			reader.close();
+			return sb.toString();
+		} catch (IOException ex){
+			ex.printStackTrace();
+		}
+		return "";
+	}
+
+	/**
+	 * Checks the program state; if an error occurred, throw a runtime exception.
+	 * @param func The name of the function in which the error might have occurred.
+	 */
+	public static void checkGLError(String func){
 		int error;
 		while((error = glGetError()) != GL_NO_ERROR){
 			Log.e(TAG, func + ": glError " + error);
@@ -114,30 +126,30 @@ public class MainActivity extends CardboardActivity implements
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
+		getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, 
+				WindowManager.LayoutParams.FLAG_FULLSCREEN);
 		setContentView(R.layout.activity_main);
 		
 		cubes = new ArrayList<Cube>();
 		
+		// Load the cardboard view
 		CardboardView cardboardView = (CardboardView) findViewById(R.id.cardboard_view);
 		cardboardView.setRenderer(this);
 		setCardboardView(cardboardView);
 		
-		mModelCube = new float[16];
+		// Set up the camera TODO move to Camera class
 		mCamera = new float[16];
 	    mView = new float[16];
-	    mModelViewProjection = new float[16];
-	    mModelView = new float[16];
-	    mModelFloor = new float[16];
-	    mHeadView = new float[16];
-	    
-	    for(int i = 0; i < 4; i++){
-	    	cubes.add(new Cube());
-	    }
-	    
+	    headView = new float[16];
+
+	    // Load the default vibrator (hue hue hue)
 	    vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
 	    
-	    mHUD = (ServerviewOverlayView) findViewById(R.id.overlay);
-	    mHUD.show3dToast("Do a thing when you see the thing");
+	    // Find the Heads-Up Display
+	    hud = (ServerviewOverlayView) findViewById(R.id.overlay);
+	    
+	    // Display the start message TODO more arguments (time, color, etc)
+	    hud.show3dToast("Do a thing when you see the thing");
 	}
 
 	@Override
@@ -160,56 +172,44 @@ public class MainActivity extends CardboardActivity implements
 	}
 
 	@Override
-	public void onDrawEye(EyeTransform transform) {
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		positionLoc = glGetAttribLocation(mGlProgram, "a_Position");
-		normalLoc = glGetAttribLocation(mGlProgram, "a_Normal");
-		colorLoc = glGetAttribLocation(mGlProgram, "a_Color");
-		glEnableVertexAttribArray(positionLoc);
-		glEnableVertexAttribArray(normalLoc);
-		glEnableVertexAttribArray(colorLoc);
-		checkGLError("onDrawEye");
+	public void onSurfaceCreated(EGLConfig config) {
+		Log.i(TAG, "surface created!");
+		glClearColor(0.1f, 0.1f, 0.1f, 0.5f); // dark background
 		
-		Matrix.multiplyMM(mView, 0, transform.getEyeView(), 0, mCamera, 0);
-		Matrix.multiplyMV(mLightPosInEyeSpace, 0, mView, 0, mLightPosInWorldSpace, 0);
-		glUniform3f(mLightPosParam, mLightPosInEyeSpace[0], mLightPosInEyeSpace[1],
-			mLightPosInEyeSpace[2]);
-		
-		Matrix.multiplyMM(mModelView, 0, mView, 0, mModelCube, 0);
-		Matrix.multiplyMM(mModelViewProjection, 0, transform.getPerspective(), 
-				0, mModelView, 0);
-		for(int i = 0; i < cubeColors.length; i++){
-			drawCube(i);
+		// Let's add two cubes!
+		cubes.add(new Cube(new int[]{Color.RED, Color.GREEN,
+									 Color.BLUE, Color.CYAN,
+									 Color.MAGENTA, Color.WHITE},
+						   new int[]{Color.YELLOW, Color.YELLOW,
+									 Color.YELLOW, Color.YELLOW,
+									 Color.YELLOW, Color.YELLOW}, objectDistance));
+		cubes.add(new Cube(new int[]{Color.GRAY, Color.GREEN,
+									 Color.BLUE, Color.GREEN,
+									 Color.DKGRAY, Color.GREEN},
+						   new int[]{Color.YELLOW, Color.YELLOW,
+									 Color.YELLOW, Color.YELLOW,
+									 Color.YELLOW, Color.YELLOW}, objectDistance));
+		// in random locations
+		for(Cube cube : cubes){
+			cube.randomizeLocation();
 		}
 		
-		Matrix.multiplyMM(mModelView, 0, mView, 0, mModelFloor, 0);
-		Matrix.multiplyMM(mModelViewProjection, 0, transform.getPerspective(),
-				0, mModelView, 0);
-		drawFloor(transform.getPerspective());
+		// Create the floor
+		floor = new Floor(Color.BLUE, floorDepth);
 		
-	}
-
-	@Override
-	public void onFinishFrame(Viewport arg0) {}
-
-	@Override
-	public void onNewFrame(HeadTransform transform) {
-		glUseProgram(mGlProgram);
-		mModelViewProjectionParam = glGetUniformLocation(mGlProgram, "u_MVP");
-		mLightPosParam = glGetUniformLocation(mGlProgram, "u_LightPos");
-		mModelViewParam = glGetUniformLocation(mGlProgram, "u_MVMatrix");
-		mModelParam = glGetUniformLocation(mGlProgram, "u_Model");
-		mIsFloorParam = glGetUniformLocation(mGlProgram, "u_IsFloor");
-		
-		Matrix.rotateM(mModelCube, 0, TIME_DELTA, 0.5f, 0.5f, 1.0f);
-		Matrix.setLookAtM(mCamera, 0, 0f, 0f, CAMERA_Z, 0f, 0f, 0f, 0f, 1f, 0f);
-		transform.getHeadView(mHeadView, 0);
-		checkGLError("onNewFrame");
-	}
-
-	@Override
-	public void onRendererShutdown() {
-		Log.i(TAG, "renderer shutdown!");
+		// Load the shaders
+	    int vertexShader = loadGlShader(GL_VERTEX_SHADER, R.raw.light_vertex);
+	    int gridShader = loadGlShader(GL_FRAGMENT_SHADER, R.raw.grid_fragment);
+	    
+	    // Attach them to the program
+	    programPointer = glCreateProgram();
+	    glAttachShader(programPointer, vertexShader);
+	    glAttachShader(programPointer, gridShader);
+	    glLinkProgram(programPointer);
+	    glEnable(GL_DEPTH_TEST);
+	    
+	    checkGLError("onSurfaceCreated");
+	
 	}
 
 	@Override
@@ -218,174 +218,87 @@ public class MainActivity extends CardboardActivity implements
 	}
 
 	@Override
-	public void onSurfaceCreated(EGLConfig config) {
-		Log.i(TAG, "surface created!");
-		glClearColor(0.1f, 0.1f, 0.1f, 0.5f); // dark background
+	public void onNewFrame(HeadTransform transform) {
+		// Use the correct shaders on this frame
+		glUseProgram(programPointer);
 		
-		// Make the cubes
-		for(int i = 0; i < WorldLayout.CUBE_COORDS.length; i++) {
-			ByteBuffer bbVertices = ByteBuffer.allocateDirect(WorldLayout.CUBE_COORDS[i].length * 4);
-			bbVertices.order(ByteOrder.nativeOrder());
-			cubeVertices[i] = bbVertices.asFloatBuffer();
-			cubeVertices[i].put(WorldLayout.CUBE_COORDS[i]);
-			cubeVertices[i].position(0);
-			
-			ByteBuffer bbColors = ByteBuffer.allocateDirect(WorldLayout.CUBE_COLORS[i].length * 4);
-			bbColors.order(ByteOrder.nativeOrder());
-			cubeColors[i] = bbColors.asFloatBuffer();
-			cubeColors[i].put(WorldLayout.CUBE_COLORS[i]);
-			cubeColors[i].position(0);
-			
-			ByteBuffer bbFoundColors = ByteBuffer.allocateDirect(WorldLayout.CUBE_FOUND_COLORS[i].length * 4);
-			bbFoundColors.order(ByteOrder.nativeOrder());
-			cubeFoundColors[i] = bbFoundColors.asFloatBuffer();
-			cubeFoundColors[i].put(WorldLayout.CUBE_FOUND_COLORS[i]);
-			cubeFoundColors[i].position(0);
-			
-			// All cubes have the same set of normals
-			ByteBuffer bbNormals = ByteBuffer.allocateDirect(WorldLayout.CUBE_NORMALS.length * 4);
-			bbNormals.order(ByteOrder.nativeOrder());
-			cubeNormals[i] = bbNormals.asFloatBuffer();
-			cubeNormals[i].put(WorldLayout.CUBE_NORMALS);
-			cubeNormals[i].position(0);
+		// Find the pointers
+		viewProjectionPointer = glGetUniformLocation(programPointer, "u_MVP");
+		lightPosPointer = glGetUniformLocation(programPointer, "u_LightPos");
+		viewPointer = glGetUniformLocation(programPointer, "u_MVMatrix");
+		modelPointer = glGetUniformLocation(programPointer, "u_Model");
+		
+		// Slowly rotate each of the cubes
+		for(Cube cube : cubes){
+			cube.rotate(TIME_DELTA, 0.5f, 0.5f, 1.0f);
 		}
 		
-		// Floor
-		ByteBuffer bbFloorVertices = ByteBuffer.allocateDirect(WorldLayout.FLOOR_COORDS.length * 4);
-        bbFloorVertices.order(ByteOrder.nativeOrder());
-        floorVertices = bbFloorVertices.asFloatBuffer();
-        floorVertices.put(WorldLayout.FLOOR_COORDS);
-        floorVertices.position(0);
+		// TODO camera object
+		Matrix.setLookAtM(mCamera, 0, 0f, 0f, CAMERA_Z, 0f, 0f, 0f, 0f, 1f, 0f);
+		
+		// Save part of the head transformation
+		transform.getHeadView(headView, 0);
+		
+		checkGLError("onNewFrame");
+	}
 
-        ByteBuffer bbFloorNormals = ByteBuffer.allocateDirect(WorldLayout.FLOOR_NORMALS.length * 4);
-        bbFloorNormals.order(ByteOrder.nativeOrder());
-        floorNormals = bbFloorNormals.asFloatBuffer();
-        floorNormals.put(WorldLayout.FLOOR_NORMALS);
-        floorNormals.position(0);
+	@Override
+	public void onDrawEye(EyeTransform transform) {
+		// Clear color and depth buffers
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		
+		positionPointer = glGetAttribLocation(programPointer, "a_Position");
+		normalPointer = glGetAttribLocation(programPointer, "a_Normal");
+		colorPointer = glGetAttribLocation(programPointer, "a_Color");
+		
+		// Enable the vertex attributes
+		glEnableVertexAttribArray(positionPointer);
+		glEnableVertexAttribArray(normalPointer);
+		glEnableVertexAttribArray(colorPointer);
+		checkGLError("onDrawEyePointer");
+		
+		// Calculate the view
+		Matrix.multiplyMM(mView, 0, transform.getEyeView(), 0, mCamera, 0);
+		
+		// Place the light
+		Matrix.multiplyMV(lightInEyes, 0, mView, 0, lightInWorld, 0);
+		glUniform3f(lightPosPointer, lightInEyes[0], lightInEyes[1],
+					lightInEyes[2]);
+		
+		// Draw each of the cubes
+		for(Cube cube : cubes) {
+			cube.draw(mView, transform.getPerspective(), programPointer, 
+					modelPointer, viewPointer, viewProjectionPointer);
+		}
+		
+		// Draw the floor
+		floor.draw(mView, transform.getPerspective(), programPointer,
+					modelPointer, viewPointer, viewProjectionPointer);
+		
+	}
 
-        ByteBuffer bbFloorColors = ByteBuffer.allocateDirect(WorldLayout.FLOOR_COLORS.length * 4);
-        bbFloorColors.order(ByteOrder.nativeOrder());
-        floorColors = bbFloorColors.asFloatBuffer();
-        floorColors.put(WorldLayout.FLOOR_COLORS);
-        floorColors.position(0);
-		
-        int vertexShader = loadGlShader(GL_VERTEX_SHADER, R.raw.light_vertex);
-        int gridShader = loadGlShader(GL_FRAGMENT_SHADER, R.raw.grid_fragment);
-        
-        mGlProgram = glCreateProgram();
-        glAttachShader(mGlProgram, vertexShader);
-        glAttachShader(mGlProgram, gridShader);
-        glLinkProgram(mGlProgram);
-        glEnable(GL_DEPTH_TEST);
-        
-        Matrix.setIdentityM(mModelCube, 0);
-        Matrix.translateM(mModelCube, 0, 0, 0, -mObjectDistance);
-        Matrix.setIdentityM(mModelFloor, 0);
-        Matrix.translateM(mModelFloor, 0, 0, -mFloorDepth, 0);
-        
-        checkGLError("onSurfaceCreated");
-	
+	@Override
+	public void onFinishFrame(Viewport arg0) {}
+
+	@Override
+	public void onRendererShutdown() {
+		Log.i(TAG, "renderer shutdown!");
 	}
-	
-	private String readRawTextFile(int resId){
-		InputStream is = getResources().openRawResource(resId);
-		try {
-			BufferedReader reader = new BufferedReader(new InputStreamReader(is));
-			StringBuilder sb = new StringBuilder();
-			String line;
-			while((line = reader.readLine()) != null){
-				sb.append(line).append("\n");
-			}
-			reader.close();
-			return sb.toString();
-		} catch (IOException ex){
-			ex.printStackTrace();
-		}
-		return "";
-	}
-	
-	public void drawCube(int index){
-		glUniform1f(mIsFloorParam, 0f);
-		glUniformMatrix4fv(mModelParam, 1, false, mModelCube, 0);
-		glUniformMatrix4fv(mModelViewParam, 1, false, mModelView, 0);
-		glVertexAttribPointer(positionLoc, COORDS_PER_VERTEX, GL_FLOAT,
-				false, 0, cubeVertices[index]);
-		glUniformMatrix4fv(mModelViewProjectionParam, 1, false,
-				mModelViewProjection, 0);
-		glVertexAttribPointer(normalLoc, 3, GL_FLOAT, false,
-				0, cubeNormals[index]);
-		if(isLookingAtObject()){
-			glVertexAttribPointer(colorLoc, 4, GL_FLOAT, false, 0,
-					cubeFoundColors[index]);
-		}
-		else{
-			glVertexAttribPointer(colorLoc, 4, GL_FLOAT, false, 0,
-					cubeColors[index]);
-		}
-		glDrawArrays(GL_TRIANGLES, 0, 36);
-		checkGLError("Drawing cube");
-	}
-	
-	public void drawFloor(float[] perspective){
-		glUniform1f(mIsFloorParam, 1f);
-		
-		glUniformMatrix4fv(mModelParam, 1, false, mModelFloor, 0);
-		glUniformMatrix4fv(mModelViewParam, 1, false, mModelView, 0);
-		glUniformMatrix4fv(mModelViewProjectionParam, 1, false,
-				mModelViewProjection, 0);
-		glVertexAttribPointer(positionLoc, COORDS_PER_VERTEX, GL_FLOAT,
-				false, 0, floorVertices);
-		glVertexAttribPointer(normalLoc, 3, GL_FLOAT, false, 0, floorNormals);
-		glVertexAttribPointer(colorLoc, 4, GL_FLOAT, false, 0, floorColors);
-		glDrawArrays(GL_TRIANGLES, 0, 6);
-		
-		checkGLError("drawFloor");		
-	}
-	
+
 	@Override
 	public void onCardboardTrigger(){
 		Log.i(TAG, "cardboard trigger!");
 
-		if(isLookingAtObject()){
-			if (mGameStarted == false){
-                mHUD.show3dToast("Begin Cube Runner");
-                mGameStarted = true;
-                StartGame();
-            }
-            mScore++;
-			hideObject();
+		for(Cube cube : cubes){
+			if(cube.isLookingAt(headView, PITCH_LIMIT, YAW_LIMIT)){
+				hud.show3dToast("Yay! Find another one!\nScore: " + score);
+	            score++;
+				cube.randomizeLocation();
+				break;
+			}
 		}
+		
 		vibrator.vibrate(50);
-	}
-	
-	private void hideObject() {
-		float[] rotation = new float[16];
-		float[] posVec = new float[4];
-		
-		float angleXZ = (float) Math.random() * 180 + 90;
-		Matrix.setRotateM(rotation, 0, angleXZ, 0f, 1f, 0f);
-		float oldDist = mObjectDistance;
-		mObjectDistance = (float) Math.random() * 15 + 5;
-		float objScaling = mObjectDistance / oldDist;
-		Matrix.scaleM(rotation, 0, objScaling, objScaling, objScaling);
-		Matrix.multiplyMV(posVec, 0, rotation, 0, mModelCube, 12);
-		
-		float angleY = (float) Math.random() * 80 - 40;
-		angleY = (float) Math.toRadians(angleY);
-		float newY = (float) Math.tan(angleY) * mObjectDistance;
-		
-		Matrix.setIdentityM(mModelCube, 0);
-		Matrix.translateM(mModelCube, 0, posVec[0], newY, posVec[2]);
-	}
-	
-	private boolean isLookingAtObject(){
-		float[] initVec = {0, 0, 0, 1f};
-		float[] objPos = new float[4];
-		Matrix.multiplyMM(mModelView, 0, mHeadView, 0, mModelCube, 0);
-		Matrix.multiplyMV(objPos, 0, mModelView, 0, initVec, 0);
-		float pitch = (float) Math.atan2(objPos[1], -objPos[2]);
-		float yaw  = (float) Math.atan2(objPos[0], -objPos[2]);
-		return Math.abs(pitch) < PITCH_LIMIT && Math.abs(yaw) < YAW_LIMIT;
 	}
 	
 	@Override
@@ -402,9 +315,5 @@ public class MainActivity extends CardboardActivity implements
 		}
 		return result;
 	}
-
-    public void StartGame(){
-
-    }
 	
 }

@@ -73,6 +73,7 @@ public class MainActivity extends CardboardActivity implements
 	private float[] mModelViewProjection;
 	private float[] mModelView;
 	private float[] mModelFloor;
+    private Boolean mGameStarted = false;
 	
 	private int mScore = 0;
 	private float mObjectDistance = 12f;
@@ -344,13 +345,15 @@ public class MainActivity extends CardboardActivity implements
 	@Override
 	public void onCardboardTrigger(){
 		Log.i(TAG, "cardboard trigger!");
+
 		if(isLookingAtObject()){
-			mScore++;
-			mHUD.show3dToast("Yay! Find another.\nScore: " + mScore);
+			if (mGameStarted == false){
+                mHUD.show3dToast("Begin Cube Runner");
+                mGameStarted = true;
+                StartGame();
+            }
+            mScore++;
 			hideObject();
-		}
-		else {
-			mHUD.show3dToast("Keep looking!");
 		}
 		vibrator.vibrate(50);
 	}
@@ -399,5 +402,9 @@ public class MainActivity extends CardboardActivity implements
 		}
 		return result;
 	}
+
+    public void StartGame(){
+
+    }
 	
 }
